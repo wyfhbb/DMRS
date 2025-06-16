@@ -21,9 +21,7 @@ from torchvision.transforms import AutoAugment,AutoAugmentPolicy
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Train and evaluate CLIP with LoRA")
-    # /home/wyf/workspace/DMRS/dataset/Dataset/NWPU-RESISC45
-    # /home/wyf/workspace/DMRS/dataset/Dataset/RSD46-WHU
-    parser.add_argument('--dataset_path', type=str, default='/home/wyf/workspace/DMRS/dataset/Dataset/NWPU-RESISC45', help='Path to the dataset')
+    parser.add_argument('--dataset_path', type=str, default='./NWPU-RESISC45', help='Path to the dataset')
     parser.add_argument('--imb_type', type=str, default='exp', help='Type of imbalance')
     parser.add_argument('--imb_factor', type=float, default=0.01, help='Imbalance factor')
     parser.add_argument('--mixrs', type=bool, default=True, help='Use MixRS')
@@ -38,7 +36,7 @@ def parse_arguments():
     parser.add_argument('--lora_alpha', type=int, default=24, help='Scaling factor for LoRA')
     parser.add_argument('--lora_dropout', type=float, default=0.05, help='Dropout probability for LoRA')
     parser.add_argument('--device', type=str, default='cuda:0', help='Device to use for training/evaluation')
-    parser.add_argument('--log_dir', type=str, default='./45分类多专家敏感性实验/3时间统计', help='Directory to save training logs')
+    parser.add_argument('--log_dir', type=str, default='./logs', help='Directory to save training logs')
     parser.add_argument('--load_model', type=str, default=None, help='Path to load the pre-trained model')
     return parser.parse_args()
 
@@ -89,7 +87,7 @@ def train_one_epoch(model, train_dataloader, optimizer, loss_fn, device, epoch, 
         images = images.to(device).float()
         targets = targets.to(device).long()
         
-        if args.mixrs:
+        if args is not None and hasattr(args, 'mixrs') and args.mixrs and mixrs is not None:
             train_images, train_labels, mask, sk_ratio = mixrs(images, targets, num_classes=len(classes))
             train_images = train_images.to(device).float()
             train_labels = train_labels.to(device).float()
@@ -104,7 +102,7 @@ def train_one_epoch(model, train_dataloader, optimizer, loss_fn, device, epoch, 
         tokenized_texts = tokenized_classes
 
         if scaler:
-            with torch.amp.autocast(device_type=device, dtype=torch.float32): 
+            with torch.amp.autocast_mode.autocast(device_type=device, dtype=torch.float32): 
                 logits_per_image, _ = model(train_images, tokenized_texts)
                 if args.MME_loss:
                     loss = loss_fn(experts_logits=logits_per_image, targets=train_labels)
@@ -316,135 +314,135 @@ def main():
         logging.info(f"Model loaded from {args.load_model}")
     
     # 计算并记录模型参数量
-    total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"总参数量: {total_params:,}, 可训练参数量: {trainable_params:,}")
-    logging.info(f"总参数量: {total_params:,}, 可训练参数量: {trainable_params:,}")
+    # total_params = sum(p.numel() for p in model.parameters())
+    # trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    # print(f"总参数量: {total_params:,}, 可训练参数量: {trainable_params:,}")
+    # logging.info(f"总参数量: {total_params:,}, 可训练参数量: {trainable_params:,}")
     
     # 计算text_encoder的参数量
-    if args.MME_loss:
-        text_encoder_params = sum(p.numel() for name, p in model.model.base_model.model.transformer.named_parameters())
-    else:
-        text_encoder_params = sum(p.numel() for name, p in model.named_parameters() if "transformer" in name and not "visual" in name)
+    # if args.MME_loss:
+    #     text_encoder_params = sum(p.numel() for name, p in model.model.base_model.model.transformer.named_parameters())
+    # else:
+    #     text_encoder_params = sum(p.numel() for name, p in model.named_parameters() if "transformer" in name and not "visual" in name)
     
     # 计算image_encoder参数量
-    if args.MME_loss:
-        vision_encoder_params = sum(p.numel() for name, p in model.model.base_model.model.visual.named_parameters())
-    else:
-        vision_encoder_params = sum(p.numel() for name, p in model.named_parameters() if "visual" in name)
+    # if args.MME_loss:
+    #     vision_encoder_params = sum(p.numel() for name, p in model.model.base_model.model.visual.named_parameters())
+    # else:
+    #     vision_encoder_params = sum(p.numel() for name, p in model.named_parameters() if "visual" in name)
         
-    print(f"图像编码器参数量: {vision_encoder_params:,}, 文本编码器参数量: {text_encoder_params:,}")
+    # print(f"图像编码器参数量: {vision_encoder_params:,}, 文本编码器参数量: {text_encoder_params:,}")
     
     
     # 计算模型FLOPs - 分别计算推理和训练时的计算量
-    def calculate_flops(model, input_shape=(3, 224, 224)):
-        try:
-            from ptflops import get_model_complexity_info
-            import copy
+    # def calculate_flops(model, input_shape=(3, 224, 224)):
+    #     try:
+    #         from ptflops import get_model_complexity_info
+    #         import copy
             
-            # 为了计算推理时的FLOPs，创建一个包装类
-            class InferenceModelWrapper(nn.Module):
-                def __init__(self, model, device):
-                    super().__init__()
-                    self.model = model
-                    self.device = device
-                    self.dummy_text = clip.tokenize(["dog"]).to(device)
+    #         # 为了计算推理时的FLOPs，创建一个包装类
+    #         class InferenceModelWrapper(nn.Module):
+    #             def __init__(self, model, device):
+    #                 super().__init__()
+    #                 self.model = model
+    #                 self.device = device
+    #                 self.dummy_text = clip.tokenize(["dog"]).to(device)
                 
-                def forward(self, x):
-                    # 设置为评估模式
-                    self.model.eval()
-                    return self.model(x, self.dummy_text)[0]
+    #             def forward(self, x):
+    #                 # 设置为评估模式
+    #                 self.model.eval()
+    #                 return self.model(x, self.dummy_text)[0]
             
-            # 为了计算训练时的FLOPs，创建一个包装类
-            class TrainingModelWrapper(nn.Module):
-                def __init__(self, model, device):
-                    super().__init__()
-                    self.model = model
-                    self.device = device
-                    self.dummy_text = clip.tokenize(["dog"]).to(device)
+    #         # 为了计算训练时的FLOPs，创建一个包装类
+    #         class TrainingModelWrapper(nn.Module):
+    #             def __init__(self, model, device):
+    #                 super().__init__()
+    #                 self.model = model
+    #                 self.device = device
+    #                 self.dummy_text = clip.tokenize(["dog"]).to(device)
                 
-                def forward(self, x):
-                    self.model.train()
-                    # 保存计算图来计算反向传播
-                    return self.model(x, self.dummy_text)[0]
+    #             def forward(self, x):
+    #                 self.model.train()
+    #                 # 保存计算图来计算反向传播
+    #                 return self.model(x, self.dummy_text)[0]
             
-            # 1. 计算推理时的FLOPs
-            model_copy = copy.deepcopy(model)
-            inference_model = InferenceModelWrapper(model_copy, device)
-            inference_model.eval()
+    #         # 1. 计算推理时的FLOPs
+    #         model_copy = copy.deepcopy(model)
+    #         inference_model = InferenceModelWrapper(model_copy, device)
+    #         inference_model.eval()
             
-            inference_macs, _ = get_model_complexity_info(
-                inference_model, input_shape, as_strings=False,
-                print_per_layer_stat=False, verbose=False
-            )
+    #         inference_macs, _ = get_model_complexity_info(
+    #             inference_model, input_shape, as_strings=False,
+    #             print_per_layer_stat=False, verbose=False
+    #         )
             
-            # 2. 计算训练时的FLOPs
-            # 对于LoRA模型，我们需要计算：
-            # - 前向传播的FLOPs
-            # - 反向传播中只有LoRA参数需要计算梯度
-            model_copy = copy.deepcopy(model)
-            training_model = TrainingModelWrapper(model_copy, device)
-            training_model.train()
+    #         # 2. 计算训练时的FLOPs
+    #         # 对于LoRA模型，我们需要计算：
+    #         # - 前向传播的FLOPs
+    #         # - 反向传播中只有LoRA参数需要计算梯度
+    #         model_copy = copy.deepcopy(model)
+    #         training_model = TrainingModelWrapper(model_copy, device)
+    #         training_model.train()
             
-            # 首先计算前向传播的FLOPs
-            training_forward_macs, _ = get_model_complexity_info(
-                training_model, input_shape, as_strings=False,
-                print_per_layer_stat=False, verbose=False
-            )
+    #         # 首先计算前向传播的FLOPs
+    #         training_forward_macs, _ = get_model_complexity_info(
+    #             training_model, input_shape, as_strings=False,
+    #             print_per_layer_stat=False, verbose=False
+    #         )
             
-            # 计算LoRA的反向传播计算量
-            # 只有可训练的参数(主要是LoRA参数)会参与反向传播
-            trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-            total_params = sum(p.numel() for p in model.parameters())
-            lora_ratio = trainable_params / total_params
+    #         # 计算LoRA的反向传播计算量
+    #         # 只有可训练的参数(主要是LoRA参数)会参与反向传播
+    #         trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    #         total_params = sum(p.numel() for p in model.parameters())
+    #         lora_ratio = trainable_params / total_params
             
-            # 估计反向传播的FLOPs为前向传播的两倍乘以LoRA参数比例
-            training_backward_macs = 2 * training_forward_macs * lora_ratio
+    #         # 估计反向传播的FLOPs为前向传播的两倍乘以LoRA参数比例
+    #         training_backward_macs = 2 * training_forward_macs * lora_ratio
             
-            # 总训练FLOPs = 前向传播 + 反向传播
-            training_total_macs = training_forward_macs + training_backward_macs
+    #         # 总训练FLOPs = 前向传播 + 反向传播
+    #         training_total_macs = training_forward_macs + training_backward_macs
             
-            return inference_macs, training_total_macs
-        except ImportError:
-            print("警告: ptflops库未安装，无法计算FLOPs。请使用 pip install ptflops 安装。")
-            logging.warning("ptflops库未安装，无法计算FLOPs。")
-            return None, None
-        except Exception as e:
-            print(f"计算FLOPs时出错: {e}")
-            logging.error(f"计算FLOPs时出错: {e}")
-            return None, None
+    #         return inference_macs, training_total_macs
+    #     except ImportError:
+    #         print("警告: ptflops库未安装，无法计算FLOPs。请使用 pip install ptflops 安装。")
+    #         logging.warning("ptflops库未安装，无法计算FLOPs。")
+    #         return None, None
+    #     except Exception as e:
+    #         print(f"计算FLOPs时出错: {e}")
+    #         logging.error(f"计算FLOPs时出错: {e}")
+    #         return None, None
     
-    # 尝试计算FLOPs
-    inference_flops, training_flops = calculate_flops(model)
+    # # 尝试计算FLOPs
+    # inference_flops, training_flops = calculate_flops(model)
     
-    # 记录参数量和计算量信息
-    print(f"模型总参数量: {total_params:,}")
-    print(f"可训练参数量: {trainable_params:,}")
-    print(f"文本编码器参数量: {text_encoder_params:,}")
-    print(f"视觉编码器参数量: {vision_encoder_params:,}")
-    if inference_flops is not None:
-        print(f"推理时FLOPs: {inference_flops:,}")
-    if training_flops is not None:
-        print(f"训练时FLOPs: {training_flops:,}")
+    # # 记录参数量和计算量信息
+    # print(f"模型总参数量: {total_params:,}")
+    # print(f"可训练参数量: {trainable_params:,}")
+    # print(f"文本编码器参数量: {text_encoder_params:,}")
+    # print(f"视觉编码器参数量: {vision_encoder_params:,}")
+    # if inference_flops is not None:
+    #     print(f"推理时FLOPs: {inference_flops:,}")
+    # if training_flops is not None:
+    #     print(f"训练时FLOPs: {training_flops:,}")
     
-    logging.info(f"模型总参数量: {total_params:,}")
-    logging.info(f"可训练参数量: {trainable_params:,}")
-    logging.info(f"文本编码器参数量: {text_encoder_params:,}")
-    logging.info(f"视觉编码器参数量: {vision_encoder_params:,}")
-    if inference_flops is not None:
-        logging.info(f"推理时FLOPs: {inference_flops:,}")
-    if training_flops is not None:
-        logging.info(f"训练时FLOPs: {training_flops:,}")
+    # logging.info(f"模型总参数量: {total_params:,}")
+    # logging.info(f"可训练参数量: {trainable_params:,}")
+    # logging.info(f"文本编码器参数量: {text_encoder_params:,}")
+    # logging.info(f"视觉编码器参数量: {vision_encoder_params:,}")
+    # if inference_flops is not None:
+    #     logging.info(f"推理时FLOPs: {inference_flops:,}")
+    # if training_flops is not None:
+    #     logging.info(f"训练时FLOPs: {training_flops:,}")
         
-    # 将信息写入TensorBoard
-    writer.add_scalar('Model/TotalParams', total_params, 0)
-    writer.add_scalar('Model/TrainableParams', trainable_params, 0)
-    writer.add_scalar('Model/TextEncoderParams', text_encoder_params, 0)
-    writer.add_scalar('Model/VisionEncoderParams', vision_encoder_params, 0)
-    if inference_flops is not None:
-        writer.add_scalar('Model/InferenceFLOPs', inference_flops, 0)
-    if training_flops is not None:
-        writer.add_scalar('Model/TrainingFLOPs', training_flops, 0)
+    # # 将信息写入TensorBoard
+    # writer.add_scalar('Model/TotalParams', total_params, 0)
+    # writer.add_scalar('Model/TrainableParams', trainable_params, 0)
+    # writer.add_scalar('Model/TextEncoderParams', text_encoder_params, 0)
+    # writer.add_scalar('Model/VisionEncoderParams', vision_encoder_params, 0)
+    # if inference_flops is not None:
+    #     writer.add_scalar('Model/InferenceFLOPs', inference_flops, 0)
+    # if training_flops is not None:
+    #     writer.add_scalar('Model/TrainingFLOPs', training_flops, 0)
     
     if args.mixrs:
         with torch.no_grad():

@@ -1,0 +1,21 @@
+[project]
+name = "dmrs"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "clip",
+    "ftfy>=6.3.1",
+    "matplotlib>=3.10.3",
+    "peft>=0.15.2",
+    "regex>=2024.11.6",
+    "scikit-learn>=1.7.0",
+    "torch>=2.7.1",
+    "torchaudio>=2.7.1",
+    "torchvision>=0.22.1",
+    "tqdm>=4.67.1",
+]
+
+[tool.uv.sources]
+clip = { git = "https://github.com/openai/CLIP.git" }
